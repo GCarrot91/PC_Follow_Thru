@@ -1,0 +1,897 @@
+################
+# INTRODUCTION #
+################
+
+# Import libraries.
+# You will need to import your own libraries on your own device if you haven't.
+import dash
+from dash import dcc
+from dash import html
+from dash.dependencies import Input, Output
+import pandas as pd
+import plotly.express as px
+import dash_bootstrap_components as dbc
+import numpy as np
+
+# Import separate files.
+from functions import *
+
+
+# You can copy and paste the below 5 lines of code to print out everything in output.
+# pd.set_option('display.max_rows', None)
+# pd.set_option('display.max_columns', None)
+# print(var)
+
+###################
+# FILE MANAGEMENT #
+###################
+
+# Read Excel files.
+# Replace the directory paths with your own paths.
+# MacOS and Windows use different nomenclature;  escape sequences as needed.
+swing_data = pd.read_excel('/Users/rsai_91/Desktop/[AF] All Files/[ED] Educational/[FT] FollowThru/DrivingRangeD.xlsx'
+                           , header=0)
+pro_swing_data = pd.read_excel('/Users/rsai_91/Desktop/[AF] All Files/[ED] Educational/[FT] '
+                               'FollowThru/ProSwingData.xlsx', header=0)
+swing_videos = pd.read_excel('/Users/rsai_91/Desktop/[AF] All Files/[ED] Educational/[FT] FollowThru/SwingVideos.xlsx'
+                             , header=0)
+
+# Abbreviate the file variables.
+sd0 = swing_data
+psd0 = pro_swing_data
+sv0 = swing_videos
+
+# Copy all the abbreviated file variables into the ones we will modify.
+sd = sd0.copy()
+psd = psd0.copy()
+sv = sv0.copy()
+
+# Drop null rows.
+sd.dropna(inplace=True)
+psd.dropna(inplace=True)
+sv.dropna(inplace=True)
+
+# Convert date and time to standardized date and time.
+sd['Time'] = pd.to_datetime(sd['Date'], format='%m/%d/%Y %I:%M:%S %p')
+sd['Date'] = sd['Date'].dt.date
+sd['Time'] = sd['Time'].dt.time
+
+# Create a new column ('AvsDevDist') to store the standardized accuracy by taking the absolute value of the deviation
+# for both 'sd' and 'psd'.
+sd['AbsDevDist'] = abs(sd['Est_Total_Flat_Side'])
+psd['AbsDevDist'] = abs(psd['TotalDevDistance'])
+
+# Create a new column ('ClubFloat') to store the club numbers for each club type by applying the conversion function.
+sd['ClubFloat'] = sd['Club'].apply(ct_str_to_ct_float)
+psd['ClubFloat'] = psd['Club'].apply(ct_str_to_ct_float)
+
+# Sort the df based on ascending 'ClubFloat'.
+sd.sort_values(by='ClubFloat', inplace=True)
+psd.sort_values(by='ClubFloat', inplace=True)
+
+# Add new column ('Source') to both 'sd' and 'psd'.
+sd['Source'] = 'Player'
+psd['Source'] = 'Pro'
+
+# Combine the 'sd' and 'psd' into one.
+sd_and_psd = pd.concat([sd, psd])
+
+# Calculate the standard deviation of the accuracy for 'sd'.
+sd_accuracy_stdv = sd["AbsDevDist"].std()
+
+# Calculate the average accuracy for each club type for pros.
+psd_accuracy_avg = psd.groupby('ClubFloat')['AbsDevDist'].mean()
+
+# Map the average accuracy of the pros to a new column in 'sd'.
+sd['ProDevDist'] = sd['ClubFloat'].map(psd_accuracy_avg)
+
+# Calculate the difference between the accuracy of the player and the pro.
+sd['PlayerAccuracyError'] = sd['AbsDevDist'] - sd['ProDevDist']
+
+# Identify regression variables.
+reg_vars = ['Club_Speed', 'Attack_Angle', 'Club_Path', 'Low_Point', 'Swing_Plane', 'Swing_Direction', 'Dyn._Loft',
+            'Face_Angle', 'Face_To_Path', 'Dynamic_Lie', 'Impact_Offset_mm', 'Impact_Height_mm']
+
+# Calculate the correlation coefficients against 'AbsDevDist'.
+accuracy_corr_df = abs(sd[reg_vars].corrwith(sd['AbsDevDist']))
+
+# Print the correlation coefficients in a table format
+print("deviation distance correlation")
+print(dist_corr_matrix)
+print("absolute value of deviation")
+print(dist_corr_matrix1)
+
+# test plot the correlation - note this combines all club nums
+# fig = px.bar(dist_corr_matrix1)
+# fig.show()
+
+# code for determining which youtube video to display
+
+sv = swing_videos
+si = dist_corr_matrix1.idxmax()
+
+# select rows where name is 'swing issue'
+si_r = sv.loc[sv['SwingIssue'] == si]
+
+# select the city of youtubeaddress
+# yta = si_r.sample(['YouTubeAddress'].values[0])
+Rndm_si = si_r.sample()
+yta = Rndm_si['YouTubeAddress']
+yta_str = yta.to_string(index=False)
+
+# set the table ID to the max problem with deviation
+idx = dist_corr_matrix1.idxmax()
+
+# set cd as the new data set
+
+cd = ad
+print(cd.columns)
+# implement Dash
+
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.COSMO])
+
+app.layout = html.Div([
+    html.H1("Follow Thru Dashboard"),
+    dcc.Tabs(id='tabs', value='tab-main', children=[
+        dcc.Tab(label='Swing Analysis', value='tab-main', children=[
+            html.Div([
+                html.Label("Club Type"),
+                dcc.Dropdown(
+                    id="club_type",
+                    options=[{"label": col, "value": col} for col in cd["Club"].drop_duplicates().sort_values()],
+                    value="4 Iron",
+                    clearable=False,
+                    searchable=False
+                ),
+                html.Label("X-Axis"),
+                dcc.Dropdown(
+                    id="x-axis-dropdown",
+                    options=[{"label": col, "value": col} for col in cd.columns],
+                    value='Face_Angle',
+                    clearable=False,
+                    searchable=False
+                ),
+                html.Label("Y-Axis"),
+                dcc.Dropdown(
+                    id="y-axis-dropdown",
+                    options=[{"label": col, "value": col} for col in cd.columns],
+                    value='Face_To_Path',
+                    clearable=False,
+                    searchable=False
+                ),
+                html.Label("ColorTest"),
+                dcc.Dropdown(
+                    id="colordropdown",
+                    options=[{"label": col, "value": col} for col in cd.columns],
+                    value="AbsDevDist",
+                    clearable=False,
+                    searchable=False
+                )
+            ], style={"width": "50%", "display": "inline-block"}),
+            dcc.Graph(
+                id="scatter-plot",
+                figure=px.scatter(cd[cd["Club"] == cd["Club"].unique()[0]], x="Face_Angle", y="AbsDevDist",
+                                  hover_data=["Face_To_Path"], size="Est._Total_Flat_Length", size_max=15,
+                                  labels={"Est._Total_Flat_Length": "Marker Size"}),
+                style={"width": "50%", "float": "right", "display": "inline-block"}
+            ),
+            html.Div([
+                dcc.Graph(
+                    id='histogram-plot',
+                    figure=px.histogram(cd, x="Face_To_Path", nbins=8, color="Date", marginal="box"),
+                    style={"width": "50%", "float": "right", "display": "inline-block"}
+                )
+            ]),
+        ]),
+
+        # Page 2
+
+        dcc.Tab(label='Target Shots', value='tab-a', children=[
+            html.Div([
+                html.Div([
+                    html.Label("Club Type"),
+                    dcc.Dropdown(
+                        id="club_type_a",
+                        options=[{"label": col, "value": col} for col in cd["Club"].drop_duplicates().sort_values()],
+                        value="4 Iron",
+                        clearable=False,
+                        searchable=False
+                    ),
+                    html.Label("X-Axis-a"),
+                    dcc.Dropdown(
+                        id="x-axis-dropdown-page-a",
+                        options=[{"label": col, "value": col} for col in cd.columns],
+                        value="Face_To_Path",
+                        clearable=False,
+                        searchable=False
+                    ),
+                    html.Label("Y-Axis-b"),
+                    dcc.Dropdown(
+                        id="y-axis-dropdown-page-a",
+                        options=[{"label": col, "value": col} for col in cd.columns],
+                        value="Face_Angle",
+                        clearable=False,
+                        searchable=False
+                    ),
+
+                ], style={"width": "50%", "float": "left", "display": "inline-block"}),
+                html.Div([
+
+                    dcc.Graph(id="scatter-plot-page-a")
+
+                ], style={"width": "50%", "float": "right", "display": "inline-block"})
+            ])
+        ]),
+
+        # Page 3
+
+        dcc.Tab(label='Shot Variance', value='tab-b', children=[
+            html.Div([
+                html.Label("Club Type"),
+                dcc.Dropdown(
+                    id="club_type_b",
+                    options=[{"label": col, "value": col} for col in cd["Club"].drop_duplicates().sort_values()],
+                    value="4 Iron",
+                    clearable=False,
+                    searchable=False
+                ),
+                html.Label("AnalysisType"),
+                dcc.Dropdown(
+                    id="target_type",
+                    options=[{"label": col, "value": col} for col in cd.columns],
+                    value="AbsDevDist",
+                    clearable=False,
+                    searchable=False
+                ),
+                html.Label("option_a"),
+                dcc.Dropdown(
+                    id="option_a",
+                    options=[{"label": col, "value": col} for col in cd.columns],
+                    value="Face_To_Path",
+                    clearable=False,
+                    searchable=False
+                ),
+                html.Label("option_b"),
+                dcc.Dropdown(
+                    id="option_b",
+                    options=[{"label": col, "value": col} for col in cd.columns],
+                    value="Face_Angle",
+                    clearable=False,
+                    searchable=False
+                )
+            ], style={"width": "25%", "display": "inline-block"}
+            ),
+
+            html.Div([
+                html.Div([
+                    dcc.Graph(id='graph1')
+                ], className='col'),
+                html.Div([
+                    dcc.Graph(id='graph2')
+                ], className='col'),
+                html.Div([
+                    dcc.Graph(id='graph3')
+                ], className='col'),
+                html.Div([
+                    dcc.Graph(id='graph4')
+                ], className='col')
+            ], className='row'),
+        ],
+                ),
+
+        # page 4
+        dcc.Tab(label='Video Analysis', value='tab-c', children=[
+            html.Div([
+
+                html.Label("club_selection-c"),
+                dcc.Dropdown(
+                    id="club_selection",
+                    options=[{"label": col, "value": col} for col in cd["Club"].drop_duplicates().sort_values()],
+                    value="4 Iron",
+                    clearable=False,
+                    searchable=False
+                )
+
+            ]),
+
+            html.Div([
+                html.Iframe(id="yt_video",
+                            src=yta_str,
+                            width=800,
+                            height=600,
+                            style={"width": "60%", "float": "left", "display": "inline-block"}
+                            )
+            ]),
+
+            html.Div([
+                dcc.Graph(id='correlation_graph',
+                          figure=px.bar(dist_corr_matrix, x=dist_corr_matrix.index, y=dist_corr_matrix.values),
+                          style={"width": "40%", "float": "right", "display": "inline-block"}
+                          )
+            ]),
+        ]),
+
+    ]),
+
+])
+
+
+# Call backs for page 1
+
+@app.callback(
+    Output("scatter-plot", "figure"),
+
+    [
+        Input("club_type", "value"),
+        Input("x-axis-dropdown", "value"),
+        Input("y-axis-dropdown", "value"),
+        Input("colordropdown", "value"),
+    ]
+)
+def update_scatter_plot(club_type, x_axis_col, y_axis_col, colordropdown):
+    club_data = cd[cd["Club"] == club_type]
+    fig = px.scatter(club_data, x=x_axis_col, y=y_axis_col, color=colordropdown,
+                     hover_data=["Face_To_Path"], trendline="ols", size="AbsDevDist", size_max=15,
+                     labels={"TotalDist": "Marker Size"})
+    return fig
+
+
+@app.callback(
+    Output("histogram-plot", "figure"),
+    [
+        Input("club_type", "value"),
+        Input("x-axis-dropdown", "value"),
+        Input("y-axis-dropdown", "value"),
+    ]
+)
+def update_histogram_plot(club_type, x_axis_col, y_axis_col):
+    club_data = cd[cd["Club"] == club_type]
+    fig1 = px.histogram(club_data, x=x_axis_col, nbins=8, color="Date", marginal="box")
+    return fig1
+
+
+# page 2
+
+@app.callback(
+    Output("scatter-plot-page-a", "figure"),
+    [
+        Input("club_type_a", "value"),
+        Input("x-axis-dropdown-page-a", "value"),
+        Input("y-axis-dropdown-page-a", "value")
+    ]
+)
+def update_scatter_plot_page_a(club_type_a, x_axis_col, y_axis_col):
+    print(club_type_a, x_axis_col, y_axis_col)
+    club_data = cd[cd["Club"] == club_type_a]
+    fig = px.scatter(club_data, x=x_axis_col, y=y_axis_col, color=club_data['out_error'] <= 0,
+                     color_discrete_map={True: 'green', False: 'red'})
+
+    return fig
+
+
+# Page 3
+
+
+# Define callback for first graph
+@app.callback(
+    Output('graph1', 'figure'),
+    [
+        Input('club_type_b', 'value'),
+        Input('target_type', 'value')
+    ]
+)
+def update_graph1(club_type_b, target_type):
+    club_distr = ad[ad["Club"] == club_type_b]
+    distr_type = target_type
+    print(ad.head())
+    print("club_distr")
+    print(club_distr.head())
+    os = club_distr[club_distr["out_error"] > 0].copy()
+    gs = club_distr[club_distr["out_error"] < 0].copy()
+    # pro_line = club_distr.loc[club_distr["Source"] == "pro", target_type].values[0]
+    figure = px.histogram(club_distr, x=distr_type, nbins=20, color="Source", opacity=.5, histnorm="density")
+    # figure = figure.add_hline(y=pro_line, line_dash="dash", line_color="red")
+
+    return figure
+
+
+# Define callback for second graph
+@app.callback(
+    Output('graph2', 'figure'),
+    [
+        Input('club_type_b', 'value'),
+        Input('target_type', 'value')
+    ]
+)
+def update_graph2(club_type_b, target_type):
+    club_distr = ad[ad["Club"] == club_type_b]
+    distr_type = target_type
+
+    os = club_distr[club_distr["out_error"] > 0].copy()
+    gs = club_distr[club_distr["out_error"] < 0].copy()
+
+    print("trying to find out the source of the error")
+    print(club_distr.loc[club_distr["Source"] == "pro", target_type])
+    print("still a test")
+
+    pro_line = club_distr.loc[club_distr["Source"] == "pro", target_type]
+
+    figure = px.box(pd.concat([gs.assign(dataset='good'), os.assign(dataset='out')]), x='dataset', y=distr_type,
+                    color="dataset")
+    # figure = figure.add_hline(y=pro_line, line_dash="dash", line_color="red")
+
+    return figure
+
+
+@app.callback(
+    Output('graph3', 'figure'),
+    [
+        Input('club_type_b', 'value'),
+        Input('option_a', 'value')
+    ]
+)
+def update_graph3(club_type_b, option_a):
+    club_distr = ad[ad["Club"] == club_type_b]
+    distr_type = option_a
+
+    os = club_distr[club_distr["out_error"] > 0].copy()
+    gs = club_distr[club_distr["out_error"] < 0].copy()
+    # pro_line = club_distr.loc[club_distr["Source"] == "pro", option_a].values[0]
+
+    figure = px.box(pd.concat([gs.assign(dataset='good'), os.assign(dataset='out')]), x='dataset', y=distr_type,
+                    color="dataset")
+    # figure = figure.add_hline(y=pro_line, line_dash="dash", line_color="red")
+
+    return figure
+
+
+@app.callback(
+    Output('graph4', 'figure'),
+    [
+        Input('club_type_b', 'value'),
+        Input('option_b', 'value')
+    ]
+)
+def update_graph4(club_type_b, option_b):
+    club_distr = ad[ad["Club"] == club_type_b]
+    distr_type = option_b
+
+    os = club_distr[club_distr["out_error"] > 0].copy()
+    gs = club_distr[club_distr["out_error"] < 0].copy()
+    # pro_line = club_distr.loc[club_distr["Source"] == "pro", option_b].values[0]
+
+    figure = px.box(pd.concat([gs.assign(dataset='good'), os.assign(dataset='out')]), x='dataset', y=distr_type,
+                    color="dataset")
+    # figure = figure.add_hline(y=pro_line, line_dash="dash", line_color="red")
+
+    return figure
+
+
+# Page 4
+
+@app.callback(
+    Output("correlation_graph", "figure"),
+    [Input("club_selection", "value")]  # , Input("y-axis-dropdown-page-a", "value")]
+)
+def update_correlation_graph(club_selection):
+    print(club_selection)
+    cd = ad[ad["Club"] == club_selection]
+    dist_corr_matrix = cd[ad_columns].corrwith(cd['AbsDevDist'])
+    figure = px.bar(dist_corr_matrix, x=dist_corr_matrix.index, y=dist_corr_matrix.values)
+    return figure
+
+
+@app.callback(
+    Output("yt_video", "src"),
+    [Input("club_selection", "value")]  # , Input("y-axis-dropdown-page-a", "value")]
+)
+def update_yt_video(club_selection):
+    cd = ad[ad["Club"] == club_selection]
+    dist_corr_matrix = cd[ad_columns].corrwith(cd['AbsDevDist'])
+    sv = swing_videos
+    si = dist_corr_matrix.idxmax()
+
+    # select rows where name is 'swing issue'
+    si_r = sv.loc[sv['SwingIssue'] == si]
+
+    # select the city of youtubeaddress
+    # yta = si_r.sample(['YouTubeAddress'].values[0])
+    Rndm_si = si_r.sample()
+    yta = Rndm_si['YouTubeAddress']
+    yta_str = yta.to_string(index=False)
+    str = yta_str
+    return str
+
+
+if __name__ == "__main__":
+    app.run_server(port=8050, debug=True)
+
+import pandas as pd
+#import numpy as np
+import matplotlib.pyplot as plt
+#import seaborn as sns
+#plt.style.use("seaborn")
+
+# from jupyter_dash import JupyterDash
+from dash import dcc
+from dash import html
+import dash
+
+app.layout = html.Div([
+    html.H1("Follow Thru Dashboard"),
+    dcc.Tabs(id='tabs', value='tab-main', children=[
+        dcc.Tab(label='Swing Analysis', value='tab-main', children=[
+            html.Div([
+                html.Label("Club Type"),
+                dcc.Dropdown(
+                    id="club_type",
+                    options=[{"label": col, "value": col} for col in cd["Club"].drop_duplicates().sort_values()],
+                    value="4 Iron",
+                    clearable=False,
+                    searchable=False
+                ),
+                html.Label("X-Axis"),
+                dcc.Dropdown(
+                    id="x-axis-dropdown",
+                    options=[{"label": col, "value": col} for col in cd.columns],
+                    value='Face_Angle',
+                    clearable=False,
+                    searchable=False
+                ),
+                html.Label("Y-Axis"),
+                dcc.Dropdown(
+                    id="y-axis-dropdown",
+                    options=[{"label": col, "value": col} for col in cd.columns],
+                    value='Face_To_Path',
+                    clearable=False,
+                    searchable=False
+                ),
+                html.Label("ColorTest"),
+                dcc.Dropdown(
+                    id="colordropdown",
+                    options=[{"label": col, "value": col} for col in cd.columns],
+                    value="AbsDevDist",
+                    clearable=False,
+                    searchable=False
+                )
+            ], style={"width": "50%", "display": "inline-block"}),
+            dcc.Graph(
+                id="scatter-plot",
+                figure=px.scatter(cd[cd["Club"] == cd["Club"].unique()[0]], x="Face_Angle", y="AbsDevDist",
+                                  hover_data=["Face_To_Path"], size="Est._Total_Flat_Length", size_max=15,
+                                  labels={"Est._Total_Flat_Length": "Marker Size"}),
+                style={"width": "50%", "float": "right", "display": "inline-block"}
+            ),
+            html.Div([
+                dcc.Graph(
+                    id='histogram-plot',
+                    figure=px.histogram(cd, x="Face_To_Path", nbins=8, color="Date", marginal="box"),
+                    style={"width": "50%", "float": "right", "display": "inline-block"}
+                )
+            ]),
+        ]),
+
+        ## Page 2 ##
+
+        dcc.Tab(label='Target Shots', value='tab-a', children=[
+            html.Div([
+                html.Div([
+                    html.Label("Club Type"),
+                    dcc.Dropdown(
+                        id="club_type_a",
+                        options=[{"label": col, "value": col} for col in cd["Club"].drop_duplicates().sort_values()],
+                        value="4 Iron",
+                        clearable=False,
+                        searchable=False
+                    ),
+                    html.Label("X-Axis-a"),
+                    dcc.Dropdown(
+                        id="x-axis-dropdown-page-a",
+                        options=[{"label": col, "value": col} for col in cd.columns],
+                        value="Face_To_Path",
+                        clearable=False,
+                        searchable=False
+                    ),
+                    html.Label("Y-Axis-b"),
+                    dcc.Dropdown(
+                        id="y-axis-dropdown-page-a",
+                        options=[{"label": col, "value": col} for col in cd.columns],
+                        value="Face_Angle",
+                        clearable=False,
+                        searchable=False
+                    ),
+
+                ], style={"width": "50%", "float": "left", "display": "inline-block"}),
+                html.Div([
+
+                    dcc.Graph(id="scatter-plot-page-a")
+
+                ], style={"width": "50%", "float": "right", "display": "inline-block"})
+            ])
+        ]),
+
+        ## Page 3 ##
+
+        dcc.Tab(label='Shot Variance', value='tab-b', children=[
+            html.Div([
+                html.Label("Club Type"),
+                dcc.Dropdown(
+                    id="club_type_b",
+                    options=[{"label": col, "value": col} for col in cd["Club"].drop_duplicates().sort_values()],
+                    value="4 Iron",
+                    clearable=False,
+                    searchable=False
+                ),
+                html.Label("AnalysisType"),
+                dcc.Dropdown(
+                    id="target_type",
+                    options=[{"label": col, "value": col} for col in cd.columns],
+                    value="AbsDevDist",
+                    clearable=False,
+                    searchable=False
+                ),
+                html.Label("option_a"),
+                dcc.Dropdown(
+                    id="option_a",
+                    options=[{"label": col, "value": col} for col in cd.columns],
+                    value="Face_To_Path",
+                    clearable=False,
+                    searchable=False
+                ),
+                html.Label("option_b"),
+                dcc.Dropdown(
+                    id="option_b",
+                    options=[{"label": col, "value": col} for col in cd.columns],
+                    value="Face_Angle",
+                    clearable=False,
+                    searchable=False
+                )
+            ], style={"width": "25%", "display": "inline-block"}
+            ),
+
+            html.Div([
+                html.Div([
+                    dcc.Graph(id='graph1')
+                ], className='col'),
+                html.Div([
+                    dcc.Graph(id='graph2')
+                ], className='col'),
+                html.Div([
+                    dcc.Graph(id='graph3')
+                ], className='col'),
+                html.Div([
+                    dcc.Graph(id='graph4')
+                ], className='col')
+            ], className='row'),
+        ],
+                ),
+
+        # page 4
+        dcc.Tab(label='Video Analysis', value='tab-c', children=[
+            html.Div([
+
+                html.Label("club_selection-c"),
+                dcc.Dropdown(
+                    id="club_selection",
+                    options=[{"label": col, "value": col} for col in cd["Club"].drop_duplicates().sort_values()],
+                    value="4 Iron",
+                    clearable=False,
+                    searchable=False
+                )
+
+            ]),
+
+            html.Div([
+                html.Iframe(id="yt_video",
+                            src=yta_str,
+                            width=800,
+                            height=600,
+                            style={"width": "60%", "float": "left", "display": "inline-block"}
+                            )
+            ]),
+
+            html.Div([
+                dcc.Graph(id='correlation_graph',
+                          figure=px.bar(dist_corr_matrix, x=dist_corr_matrix.index, y=dist_corr_matrix.values),
+                          style={"width": "40%", "float": "right", "display": "inline-block"}
+                          )
+            ]),
+        ]),
+
+    ]),
+
+])
+
+
+# Call backs for page 1
+
+@app.callback(
+    Output("scatter-plot", "figure"),
+
+    [
+        Input("club_type", "value"),
+        Input("x-axis-dropdown", "value"),
+        Input("y-axis-dropdown", "value"),
+        Input("colordropdown", "value"),
+    ]
+)
+def update_scatter_plot(club_type, x_axis_col, y_axis_col, colordropdown):
+    club_data = cd[cd["Club"] == club_type]
+    fig = px.scatter(club_data, x=x_axis_col, y=y_axis_col, color=colordropdown,
+                     hover_data=["Face_To_Path"], trendline="ols", size="AbsDevDist", size_max=15,
+                     labels={"TotalDist": "Marker Size"})
+    return fig
+
+
+@app.callback(
+    Output("histogram-plot", "figure"),
+    [
+        Input("club_type", "value"),
+        Input("x-axis-dropdown", "value"),
+        Input("y-axis-dropdown", "value"),
+    ]
+)
+def update_histogram_plot(club_type, x_axis_col, y_axis_col):
+    club_data = cd[cd["Club"] == club_type]
+    fig1 = px.histogram(club_data, x=x_axis_col, nbins=8, color="Date", marginal="box")
+    return fig1
+
+
+# page 2
+
+@app.callback(
+    Output("scatter-plot-page-a", "figure"),
+    [
+        Input("club_type_a", "value"),
+        Input("x-axis-dropdown-page-a", "value"),
+        Input("y-axis-dropdown-page-a", "value")
+    ]
+)
+def update_scatter_plot_page_a(club_type_a, x_axis_col, y_axis_col):
+    print(club_type_a, x_axis_col, y_axis_col)
+    club_data = cd[cd["Club"] == club_type_a]
+    fig = px.scatter(club_data, x=x_axis_col, y=y_axis_col, color=club_data['out_error'] <= 0,
+                     color_discrete_map={True: 'green', False: 'red'})
+
+    return fig
+
+
+# Page 3
+
+
+# Define callback for first graph
+@app.callback(
+    Output('graph1', 'figure'),
+    [
+        Input('club_type_b', 'value'),
+        Input('target_type', 'value')
+    ]
+)
+
+def update_graph1(club_type_b, target_type):
+    club_distr = ad[ad["Club"] == club_type_b]
+    distr_type = target_type
+    print(ad.head())
+    print("club_distr")
+    print(club_distr.head())
+    os = club_distr[club_distr["out_error"] > 0].copy()
+    gs = club_distr[club_distr["out_error"] < 0].copy()
+    # pro_line = club_distr.loc[club_distr["Source"] == "pro", target_type].values[0]
+    figure = px.histogram(club_distr, x=distr_type, nbins=20, color="Source", opacity=.5, histnorm="density")
+    # figure = figure.add_hline(y=pro_line, line_dash="dash", line_color="red")
+
+    return figure
+
+
+# Define callback for second graph
+@app.callback(
+    Output('graph2', 'figure'),
+    [
+        Input('club_type_b', 'value'),
+        Input('target_type', 'value')
+    ]
+)
+def update_graph2(club_type_b, target_type):
+    club_distr = ad[ad["Club"] == club_type_b]
+    distr_type = target_type
+
+    os = club_distr[club_distr["out_error"] > 0].copy()
+    gs = club_distr[club_distr["out_error"] < 0].copy()
+
+    print("trying to find out the source of the error")
+    print(club_distr.loc[club_distr["Source"] == "pro", target_type])
+    print("still a test")
+
+    pro_line = club_distr.loc[club_distr["Source"] == "pro", target_type]
+
+    figure = px.box(pd.concat([gs.assign(dataset='good'), os.assign(dataset='out')]), x='dataset', y=distr_type,
+                    color="dataset")
+    #figure = figure.add_hline(y=pro_line, line_dash="dash", line_color="red")
+
+    return figure
+
+
+@app.callback(
+    Output('graph3', 'figure'),
+    [
+        Input('club_type_b', 'value'),
+        Input('option_a', 'value')
+    ]
+)
+def update_graph3(club_type_b, option_a):
+    club_distr = ad[ad["Club"] == club_type_b]
+    distr_type = option_a
+
+    os = club_distr[club_distr["out_error"] > 0].copy()
+    gs = club_distr[club_distr["out_error"] < 0].copy()
+    #pro_line = club_distr.loc[club_distr["Source"] == "pro", option_a].values[0]
+
+    figure = px.box(pd.concat([gs.assign(dataset='good'), os.assign(dataset='out')]), x='dataset', y=distr_type,
+                    color="dataset")
+    #figure = figure.add_hline(y=pro_line, line_dash="dash", line_color="red")
+
+    return figure
+
+
+@app.callback(
+    Output('graph4', 'figure'),
+    [
+        Input('club_type_b', 'value'),
+        Input('option_b', 'value')
+    ]
+)
+def update_graph4(club_type_b, option_b):
+    club_distr = ad[ad["Club"] == club_type_b]
+    distr_type = option_b
+
+    os = club_distr[club_distr["out_error"] > 0].copy()
+    gs = club_distr[club_distr["out_error"] < 0].copy()
+    #pro_line = club_distr.loc[club_distr["Source"] == "pro", option_b].values[0]
+
+    figure = px.box(pd.concat([gs.assign(dataset='good'), os.assign(dataset='out')]), x='dataset', y=distr_type,
+                    color="dataset")
+    #figure = figure.add_hline(y=pro_line, line_dash="dash", line_color="red")
+
+    return figure
+
+
+# Page 4
+
+@app.callback(
+    Output("correlation_graph", "figure"),
+    [Input("club_selection", "value")]  # , Input("y-axis-dropdown-page-a", "value")]
+)
+def update_correlation_graph(club_selection):
+    print(club_selection)
+    cd = ad[ad["Club"] == club_selection]
+    dist_corr_matrix = cd[ad_columns].corrwith(cd['AbsDevDist'])
+    figure = px.bar(dist_corr_matrix, x=dist_corr_matrix.index, y=dist_corr_matrix.values)
+    return figure
+
+
+@app.callback(
+    Output("yt_video", "src"),
+    [Input("club_selection", "value")]  # , Input("y-axis-dropdown-page-a", "value")]
+)
+def update_yt_video(club_selection):
+    cd = ad[ad["Club"] == club_selection]
+    dist_corr_matrix = cd[ad_columns].corrwith(cd['AbsDevDist'])
+    sv = swing_videos
+    si = dist_corr_matrix.idxmax()
+
+    # select rows where name is 'swing issue'
+    si_r = sv.loc[sv['SwingIssue'] == si]
+
+    # select the city of youtubeaddress
+    # yta = si_r.sample(['YouTubeAddress'].values[0])
+    Rndm_si = si_r.sample()
+    yta = Rndm_si['YouTubeAddress']
+    yta_str = yta.to_string(index=False)
+    str = yta_str
+    return str
+
+
+if __name__ == "__main__":
+    app.run_server(port=8050, debug=True)
+
+#print(ad['DiffFromPro'])
