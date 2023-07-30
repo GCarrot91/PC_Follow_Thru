@@ -1,2 +1,4 @@
 # PC_Follow_Thru
-Source code developed by Rento Saijo for FollowThru to analyze golf swings. More to come...
+Source code developed by Rento Saijo for FollowThru to analyze golf swings.
+- Total Time Spent (So Far): 150 hours.
+- Total Code Lines (So Far): 
