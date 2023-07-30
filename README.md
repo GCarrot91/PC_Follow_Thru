@@ -1,2 +1,2 @@
 # PC_Follow_Thru
-Source code developed by Rento Saijo for FollowThru.
+Source code developed by Rento Saijo for FollowThru to analyze golf swings. More to come...
